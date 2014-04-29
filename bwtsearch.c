@@ -29,7 +29,7 @@
  *********************************/
 
 #define MAX_CHARS 256
-#define EOF_BYTE_OFFSET 4
+#define BWT_OFFSET 4
 
 
 
@@ -44,9 +44,9 @@
  **      FUNCTION PROTOTYPES    **
  *********************************/
 
-static table read_last_char_pos (char *filename);
+/*static table read_last_char_pos (char *filename);*/
 static void handle_cmd_ln_args (int argc, char *argv[]);
-static void create_index_file(char *idx_file_loc,unsigned int bwt_file_size);
+/*static void create_index_file(char *idx_file_loc,unsigned int bwt_file_size);*/
 
 /*********************************
  **        DEBUG PROTOTYPES     **
@@ -70,20 +70,35 @@ int main (int argc, char *argv[])
 {
    
    handle_cmd_ln_args(argc,argv);
+   table st = new_symbol_table();
    /*
       If no index exists then must create one
       -> can we do it without an index file?
    */
-   table st = read_last_char_pos(argv[BWT_ARG]);
+/*   table st = read_last_char_pos(argv[BWT_ARG]);*/
    // next step is to create an index file (storing Occ/Rank) if one does not
    // exist yet.
    if (! has_index) {
-      create_index_file(argv[INDEX_ARG],st->bwt_file_size);
+/*      create_index_file(argv[INDEX_ARG],st->bwt_file_size);*/
+      create_idx (argv[INDEX_ARG],bwt_file);
+   }
       index_file = fopen(argv[INDEX_ARG],"r");
+      
       fseek(index_file,0,SEEK_END); // get length of index file
       idx_file_size = ftell(index_file);
       rewind(index_file);
+      
+      printf("SIZE of BWT file is %d\n",get_bwt_size(bwt_file));
+      printf("SIZE of index file is %d\n",idx_file_size);
 
+/*      */
+      st->ctable = malloc(sizeof(int) * MAX_CHARS);
+      fseek(index_file,-C_TABLE_OFFSET,SEEK_END);
+      fread(st->ctable,4,MAX_CHARS,index_file);
+
+      st->last = get_last_char_pos (bwt_file);
+      
+      
 /*      //get occ table*/
 /*      unsigned int rank[idx_file_size];*/
 /*      fread(rank,4,idx_file_size,index_file);*/
@@ -94,18 +109,22 @@ int main (int argc, char *argv[])
 /*      } */
 
 /*      fclose(index_file);*/
+
+      
        
-   }
+   
    // if search mode
    if (search_mode) {
       char *query = (argv[QUERY_ARG]);
       backwards_search(query,st,bwt_file,index_file);
    }
-   //TODO Else unbwt
-   
-   // print c table
-/*      print_c_table(st->ctable);*/
+/*   //TODO Else unbwt*/
+/*   */
+/*   // print c table*/
+      print_c_table(st->ctable);
 /*      print_stats(st);*/
+   free(st->ctable);
+   free(st);
    fclose(bwt_file);
    fclose(index_file);
       
@@ -140,82 +159,82 @@ static void handle_cmd_ln_args (int argc, char *argv[]) {
 } 
 
 
-static table read_last_char_pos (char *filename) {
-   printf("START TO READ FILE\n");
-   // open file in read mode
-   FILE *file = fopen(filename,"r");
-   if (file == NULL) {
-      exit(-1);      
-   }
-   else {
-/*      int value;*/
-/*      fread(&value,sizeof(value),1,file);*/
-/*      printf("value = %d\n",value);*/
-      fseek(file,0,SEEK_END);
-      unsigned int length = ftell(file);
+/*static table read_last_char_pos (char *filename) {*/
+/*   printf("START TO READ FILE\n");*/
+/*   // open file in read mode*/
+/*   FILE *file = fopen(filename,"r");*/
+/*   if (file == NULL) {*/
+/*      exit(-1);      */
+/*   }*/
+/*   else {*/
+/*    //  int value;*/
+/*    //  fread(&value,sizeof(value),1,file);*/
+/*    //  printf("value = %d\n",value);*/
+/*      fseek(file,0,SEEK_END);*/
+/*      unsigned int length = ftell(file);*/
 
-      // Find the length of the file in bytes
-      printf("length of the file is: %d\n",length);
-      length -= 4;      
-      rewind(file);
-      // Get the first 4 bytes of the file to find the location of the 
-      // end of BWT character
-      unsigned char bytes[4];
-      fread(bytes,1,4,file);
-      // Convert first four bytes into integer 
-      // TODO: Might have to add +1 to this number.
-      unsigned int last = *(unsigned int*)bytes;
-      printf("Last= %d\n",last);
+/*      // Find the length of the file in bytes*/
+/*      printf("length of the file is: %d\n",length);*/
+/*      length -= 4;      */
+/*      rewind(file);*/
+/*      // Get the first 4 bytes of the file to find the location of the */
+/*      // end of BWT character*/
+/*      unsigned char bytes[4];*/
+/*      fread(bytes,1,4,file);*/
+/*      // Convert first four bytes into integer */
+/*      // TODO: Might have to add +1 to this number.*/
+/*      unsigned int last = *(unsigned int*)bytes;*/
+/*      printf("Last= %d\n",last);*/
 
-      // get frequencies;
-      int c;
-      unsigned int count[MAX_CHARS] = {0};
-      while ((c = fgetc(file)) != EOF) {
-         count[c]++;
-      }
+/*      // get frequencies;*/
+/*      int c;*/
+/*      unsigned int count[MAX_CHARS] = {0};*/
+/*      while ((c = fgetc(file)) != EOF) {*/
+/*         count[c]++;*/
+/*      }*/
 
-      table st = new_symbol_table();
-      
-      // create Count table[] from frequencies
-      // TODO must free ctable after use
-      unsigned int *ctable = create_c_table(count);
-      init_symbol_table(st,ctable,count[NEW_LINE_CHAR],length,last);
-      
-      
-      //fclose(file);
-      return st;
-   }
- 
-}
+/*      table st = new_symbol_table();*/
+/*      */
+/*      // create Count table[] from frequencies*/
+/*      // TODO must free ctable after use*/
+/*      unsigned int *ctable = create_c_table(count);*/
+/*      init_symbol_table(st,ctable,count[NEW_LINE_CHAR],length,last);*/
+/*      */
+/*      */
+/*      //fclose(file);*/
+/*      return st;*/
+/*   }*/
+/* */
+/*}*/
 
-static void create_index_file(char *idx_file_loc,unsigned int bwt_file_size) {
-   FILE *idx = fopen(idx_file_loc,"w+"); // w+ is for read and write
+/*static void create_index_file(char *idx_file_loc,unsigned int bwt_file_size) {*/
+/*   FILE *idx = fopen(idx_file_loc,"w+"); // w+ is for read and write*/
 
-   unsigned int rank[INDEX_LIMIT] = {0};
-   unsigned int char_count[256] = {0};
-   // TODO check that offset is the right place to start?? could be +/- 1
-   fseek(bwt_file,EOF_BYTE_OFFSET,SEEK_SET);
-   int index_size = INDEX_LIMIT;
-   if (bwt_file_size < INDEX_LIMIT) index_size = bwt_file_size;
-   unsigned char bytes[index_size];
-   fread(bytes,1,index_size ,bwt_file);
+/*   unsigned int rank[INDEX_LIMIT] = {0};*/
+/*   unsigned int char_count[256] = {0};*/
+/*   // TODO check that offset is the right place to start?? could be +/- 1*/
+/*   fseek(bwt_file,BWT_OFFSET,SEEK_SET);*/
+/*   int index_size = INDEX_LIMIT;*/
+/*   if (bwt_file_size < INDEX_LIMIT) index_size = bwt_file_size;*/
+/*   unsigned char bytes[index_size];*/
+/*   fread(bytes,1,index_size ,bwt_file);*/
 
-   int i;
-   int c;
-   for (i = 0; i < index_size; i += 1) {
-      // get char
-      c = bytes[i];
-      // increment character count
-      char_count[c]++;
-      // get the rank of that character
-      rank[i] = char_count[c];
-      
-   }
-   fwrite(rank,sizeof(int),index_size,idx);
-   fclose (idx);
-   return;
+/*   int i;*/
+/*   int c;*/
+/*   for (i = 0; i < index_size; i += 1) {*/
+/*      // get char*/
+/*      c = bytes[i];*/
+/*      // increment character count*/
+/*      char_count[c]++;*/
+/*      // get the rank of that character*/
+/*      rank[i] = char_count[c];*/
+/*      */
+/*   }*/
+/*   fwrite(rank,sizeof(int),index_size,idx);*/
+/*   fclose (idx);*/
+/*   return;*/
 
-}
+/*}*/
 
 
 

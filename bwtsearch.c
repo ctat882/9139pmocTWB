@@ -46,7 +46,7 @@
 
 /*static table read_last_char_pos (char *filename);*/
 static void handle_cmd_ln_args (int argc, char *argv[]);
-/*static void create_index_file(char *idx_file_loc,unsigned int bwt_file_size);*/
+/*static void create_idx(char *idx_file_loc,unsigned int bwt_size);*/
 
 /*********************************
  **        DEBUG PROTOTYPES     **
@@ -55,8 +55,8 @@ static void handle_cmd_ln_args (int argc, char *argv[]);
 /*********************************
  **        GLOBAL VARIABLES     **
  *********************************/
-FILE *bwt_file;
-FILE *index_file;
+FILE *bwt;
+FILE *idx;
 int has_index;
 int search_mode;
 int idx_file_size;
@@ -79,54 +79,39 @@ int main (int argc, char *argv[])
    // next step is to create an index file (storing Occ/Rank) if one does not
    // exist yet.
    if (! has_index) {
-/*      create_index_file(argv[INDEX_ARG],st->bwt_file_size);*/
-      create_idx (argv[INDEX_ARG],bwt_file);
+      create_idx (argv[INDEX_ARG],bwt);
    }
-      index_file = fopen(argv[INDEX_ARG],"r");
-      
-      fseek(index_file,0,SEEK_END); // get length of index file
-      idx_file_size = ftell(index_file);
-      rewind(index_file);
-      
-      printf("SIZE of BWT file is %d\n",get_bwt_size(bwt_file));
-      printf("SIZE of index file is %d\n",idx_file_size);
+   idx = fopen(argv[INDEX_ARG],"r");
+   
+/*   fseek(idx,0,SEEK_END); // get length of index file*/
+/*   idx_file_size = ftell(idx);*/
+/*   rewind(idx);*/
+   
+   st->bwt_file_size = get_bwt_size(bwt);
+   st->idx_file_size = get_idx_size(idx);
 
-/*      */
-      st->ctable = malloc(sizeof(int) * MAX_CHARS);
-      fseek(index_file,-C_TABLE_OFFSET,SEEK_END);
-      fread(st->ctable,4,MAX_CHARS,index_file);
-
-      st->last = get_last_char_pos (bwt_file);
+   c_table_from_idx(st,idx);
+   st->last = get_last_char_pos (bwt);
       
-      
-/*      //get occ table*/
-/*      unsigned int rank[idx_file_size];*/
-/*      fread(rank,4,idx_file_size,index_file);*/
-
-/*      int i;*/
-/*      for (i = 0; i < idx_file_size; i += 1) {*/
-/*         printf("position %d has rank %d\n",i,rank[i]); */
-/*      } */
-
-/*      fclose(index_file);*/
-
-      
+           
        
    
    // if search mode
    if (search_mode) {
       char *query = (argv[QUERY_ARG]);
-      backwards_search(query,st,bwt_file,index_file);
+      backwards_search(query,st,bwt,idx);
    }
 /*   //TODO Else unbwt*/
 /*   */
 /*   // print c table*/
-      print_c_table(st->ctable);
-/*      print_stats(st);*/
+/*      print_c_table(st->ctable);*/
+      print_stats(st);
+
+   // Free up memory
    free(st->ctable);
    free(st);
-   fclose(bwt_file);
-   fclose(index_file);
+   fclose(bwt);
+   fclose(idx);
       
    return 0;
 }
@@ -146,10 +131,10 @@ static void handle_cmd_ln_args (int argc, char *argv[]) {
    else {
       exit(-1);
    }
-   bwt_file = fopen(argv[BWT_ARG],"r");
-   if (bwt_file == NULL) exit(-1);
-   index_file = fopen(argv[INDEX_ARG],"r");
-   if (index_file == NULL) {
+   bwt = fopen(argv[BWT_ARG],"r");
+   if (bwt == NULL) exit(-1);
+   idx = fopen(argv[INDEX_ARG],"r");
+   if (idx == NULL) {
       has_index = FALSE;
    }
    else {
@@ -207,17 +192,17 @@ static void handle_cmd_ln_args (int argc, char *argv[]) {
 /* */
 /*}*/
 
-/*static void create_index_file(char *idx_file_loc,unsigned int bwt_file_size) {*/
+/*static void create_idx(char *idx_file_loc,unsigned int bwt_size) {*/
 /*   FILE *idx = fopen(idx_file_loc,"w+"); // w+ is for read and write*/
 
 /*   unsigned int rank[INDEX_LIMIT] = {0};*/
 /*   unsigned int char_count[256] = {0};*/
 /*   // TODO check that offset is the right place to start?? could be +/- 1*/
-/*   fseek(bwt_file,BWT_OFFSET,SEEK_SET);*/
+/*   fseek(bwt,BWT_OFFSET,SEEK_SET);*/
 /*   int index_size = INDEX_LIMIT;*/
-/*   if (bwt_file_size < INDEX_LIMIT) index_size = bwt_file_size;*/
+/*   if (bwt_size < INDEX_LIMIT) index_size = bwt_size;*/
 /*   unsigned char bytes[index_size];*/
-/*   fread(bytes,1,index_size ,bwt_file);*/
+/*   fread(bytes,1,index_size ,bwt);*/
 
 /*   int i;*/
 /*   int c;*/

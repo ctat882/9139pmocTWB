@@ -57,7 +57,7 @@ static void c_table_from_idx (table st, FILE *idx);
 
 static void create_idx (char *idx_file_loc, FILE *bwt);
 
-
+int get_last_char (FILE *bwt,int position);
 /*********************************
  **        DEBUG PROTOTYPES     **
  *********************************/
@@ -124,6 +124,13 @@ static unsigned int get_last_char_pos (FILE *bwt) {
    unsigned int last = *(unsigned int*)bytes;
    return last;
 }
+
+int get_last_char (FILE *bwt,int position) {   
+   fseek(bwt,position + BWT_OFFSET,SEEK_SET);
+   int last_ch = getc(bwt);
+   return last_ch;
+}
+
 
 static unsigned int get_bwt_size (FILE *bwt) {
    unsigned int size;
@@ -214,65 +221,79 @@ static void backwards_search (char *query,table st, FILE *bwt, FILE *idx) {
       found_match = TRUE;      
    }
    if(found_match) {
+      //TODO delete output
       int matches = last - first + 1;
       printf("Number of matches = %d\n",matches);
+
+/*
+   NOW TRY AND RECOVER STRING
+*/
+      printf("Position of last char in bwt = %d\n",st->last);
+//      fseek(bwt,st->last,SEEK_SET);
+//      int last_ch = getc(bwt);
+//      rewind(bwt);
+//      c = 0;
+//      int occurL;
+//      
+//      for (i = first; i <= last; i++) {
+//         int temp = i - 1;
+//         while ( c != last_ch) {
+//            fseek(bwt,temp,SEEK_SET);
+//            occurL = ftell(bwt);
+//            c = getc(bwt);
+//            if(c != '\n') {
+//               printf("%c",c);
+//            }
+//            temp = st->ctable[c] + occ(c,occurL,bwt,idx);
+//         }
+//      }
+
+      
    }
 
+   
    return;
 }
 
 unsigned int occ (int c, int position,FILE *bwt,FILE *idx) {
+   //TODO check if needed:
    rewind (bwt);
    rewind (idx);
 
-   int interval;
    int rank;
+   // If rank is smaller than interval, don't use index
    if (position <= RANK_INTERVAL) {
-      interval = 0;
       rank = occ_func(c,position,bwt);
    }
    else {
-      interval = position / RANK_INTERVAL;
       int idx_offset;
+      // determine index offset
       if (position >= RANK_INTERVAL && position < (RANK_INTERVAL * 2)) {
          idx_offset = 0;
       }
       else {
          idx_offset = ((position - RANK_INTERVAL)/RANK_INTERVAL) * MAX_CHARS * sizeof(int);
       }
-//      idx_offset = (interval * sizeof(int) * MAX_CHARS) - (sizeof(int) * MAX_CHARS);
-
+      // get index block 
       fseek(idx,idx_offset,SEEK_SET);
       int * index = (int*) malloc (sizeof(int) * MAX_CHARS);
       fread(index,sizeof(int),MAX_CHARS,idx);
+      // get the rank of character c from index block
       unsigned int idx_rank = index[c];
-
-
-      int bwt_start = ((position / RANK_INTERVAL) * RANK_INTERVAL); //TODO maybe -1
+      // determine where to start counting from in the bwt file
+      int bwt_start = ((position / RANK_INTERVAL) * RANK_INTERVAL);
+      // go to the start position (add 4 byte offset)
       fseek(bwt,(bwt_start + BWT_OFFSET),SEEK_SET);
       int count = 0;
       int i,ch;
+      // start bwt count from starting position to given position
       for ( i = bwt_start; i < position; i++ ) {
          ch = getc(bwt);
          if (ch == c) count++; 
       }
-//      unsigned char bwt_extract[position - bwt_start];
-//      fread(bwt_extract,sizeof(unsigned char),(position - bwt_start),bwt);
-//      unsigned int count = idx_rank;
-//      int i;
-//      int ch;
-//      for (i = 0; i < (position - bwt_start); i++ ) {
-//         if (bwt_extract[i] == (unsigned char)c) {
-//            count++;
-//         }
-//      }
-////      for (i = bwt_start; i < position; i++) {
-////         if(fgetc(bwt) == c) {
-////            count++;
-////         }
-////      }
-      printf("character: %c, position: %d, idx_int: %d, offset: %d, idx_rank: %d\n", c, position, interval,idx_offset,idx_rank);   
-      printf("occ_func rank is: %d, bwt_offset: %d, count: %d\n",occ_func(c,position,bwt),bwt_start,count); 
+
+//      printf("character: %c, position: %d, idx_int: %d, offset: %d, idx_rank: %d\n", c, position, interval,idx_offset,idx_rank);   
+//      printf("occ_func rank is: %d, bwt_offset: %d, count: %d\n",occ_func(c,position,bwt),bwt_start,count); 
       rank = idx_rank + count;
       free(index);
    }
@@ -280,47 +301,6 @@ unsigned int occ (int c, int position,FILE *bwt,FILE *idx) {
 
 }
 
-//unsigned int occ (int c, int position,FILE *bwt, FILE *idx) {
-//   rewind (bwt);
-//   rewind(idx);
-//   // Need to find at which index interval to start at
-//   int idx_interval = (position / RANK_INTERVAL);
-//   // Get the index offset
-//   int idx_offset = idx_interval * C_TABLE_OFFSET;
-//   int bwt_offset = (idx_interval * RANK_INTERVAL) - RANK_INTERVAL;
-//   // seek index file location (add the character value)
-//   fseek(idx,idx_offset - 1024,SEEK_SET);
-
-//   unsigned int index[MAX_CHARS];
-//   fread(index,sizeof(int),MAX_CHARS,idx);
-//   // get the value of the character.
-////   print_c_table(index);
-//   unsigned int idx_rank = index[c];
-
-//   printf("character: %c, position: %d, idx_int: %d, offset: %d, idx_rank: %d\n", c, position, idx_interval,idx_offset,idx_rank);
-//   printf("occ_func rank is: %d, bwt_offset: %d\n",occ_func(c,position,bwt),bwt_offset);
-//   unsigned int count = 0;
-//   int from = occ_func_pos(c,position,bwt,bwt_offset);
-//   // Now locate the position in bwt to begin counting from
-//   fseek(bwt,BWT_OFFSET + bwt_offset,SEEK_SET); //TODO not tested, could be +/- 1
-//   int i;
-//   int ch;
-//   
-//   // Count all occurences of character from idx offset to position
-//   for (i = bwt_offset; i < position; i++) {
-//      ch = getc(bwt);
-//      if (ch == c)  {
-////         printf("ch = %c\n",ch);
-//         count++;
-//      }
-//   }
-//   
-//   printf("Count = %d, occ_from = %d\n",count,from);
-//   unsigned int rank = idx_rank + count;
-//   printf("END rank = %d\n",rank); 
-//   return rank;
-
-//}
 
 // Occurrence function WITHOUT the use of index file in L Column
 int occ_func(int character,int position,FILE *bwt){

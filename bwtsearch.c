@@ -46,6 +46,7 @@
 
 /*static table read_last_char_pos (char *filename);*/
 static void handle_cmd_ln_args (int argc, char *argv[]);
+void unbwt(table st, FILE *bwt, FILE *idx);
 /*static void create_idx(char *idx_file_loc,unsigned int bwt_size);*/
 
 /*********************************
@@ -101,7 +102,11 @@ int main (int argc, char *argv[])
       char *query = (argv[QUERY_ARG]);
       backwards_search(query,st,bwt,idx);
    }
-/*   //TODO Else unbwt*/
+   else {
+      unbwt(st,bwt,idx);
+   }
+   
+   //TODO Else unbwt
 /*   */
 /*   // print c table*/
 /*      print_c_table(st->ctable);*/
@@ -120,6 +125,23 @@ int main (int argc, char *argv[])
  /**********************************
  **      FUNCTION DEFINITIONS     **
  **********************************/
+
+void unbwt(table st, FILE *bwt, FILE *idx) {
+   int i,j;
+   j = st->last;
+   int c;
+/*   int pointer;*/
+   for (i = st->bwt_file_size; i >= 0; i--) {
+     fseek(bwt,BWT_OFFSET + j,SEEK_SET);
+     c = getc(bwt);
+     printf("%c",c);
+     j = st->ctable[c] + occ(c,j,bwt,idx);
+   }
+
+}
+
+
+
 
 static void handle_cmd_ln_args (int argc, char *argv[]) {
    if (argc == UNBWT_MODE) {

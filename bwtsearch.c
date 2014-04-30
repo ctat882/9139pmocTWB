@@ -46,7 +46,8 @@
 
 /*static table read_last_char_pos (char *filename);*/
 static void handle_cmd_ln_args (int argc, char *argv[]);
-void unbwt(table st, FILE *bwt, FILE *idx);
+void unbwt(table st, FILE *bwt, FILE *idx, char *output);
+void write_unbwt(int size, FILE *unb);
 /*static void create_idx(char *idx_file_loc,unsigned int bwt_size);*/
 
 /*********************************
@@ -103,7 +104,8 @@ int main (int argc, char *argv[])
       backwards_search(query,st,bwt,idx);
    }
    else {
-      unbwt(st,bwt,idx);
+      
+      unbwt(st,bwt,idx,argv[UNBWT_ARG]);
    }
    
    //TODO Else unbwt
@@ -126,21 +128,35 @@ int main (int argc, char *argv[])
  **      FUNCTION DEFINITIONS     **
  **********************************/
 
-void unbwt(table st, FILE *bwt, FILE *idx) {
+void unbwt(table st, FILE *bwt, FILE *idx, char *output) {
    int i,j;
    j = st->last;
    int c;
+   
+   FILE *unb = fopen(output,"w+");
+   write_unbwt(st->bwt_file_size,unb);  //TODO check if I can do this.
 /*   int pointer;*/
-   for (i = st->bwt_file_size; i >= 0; i--) {
+   for (i = st->bwt_file_size - 1; i >= 0; i--) {
      fseek(bwt,BWT_OFFSET + j,SEEK_SET);
+     fseek(unb,i,SEEK_SET);
      c = getc(bwt);
-     printf("%c",c);
+     fputc(c,unb);
+
+/*     printf("%c",c);*/
      j = st->ctable[c] + occ(c,j,bwt,idx);
    }
-
+   fclose(unb);
 }
 
-
+void write_unbwt(int size, FILE *unb) {
+/*   FILE *unb = fopen("unbwt.unbwt","w+");*/
+   unsigned int nothing = 'a';
+   int i;
+   for (i = 0; i < size; i += 1) {
+      fputc(nothing,unb);
+   }
+/*   fclose(unb);*/
+}
 
 
 static void handle_cmd_ln_args (int argc, char *argv[]) {

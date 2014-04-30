@@ -12,9 +12,10 @@
 #define BWT_ARG 1
 #define INDEX_ARG 2
 #define QUERY_ARG 3
+#define UNBWT_ARG 4
 //TODO unbwt mode and search mode may have to be incremented by one/two
 // so we can use the out file for bwt
-#define UNBWT_MODE 3
+#define UNBWT_MODE 5
 #define SEARCH_MODE 4
 #define NEW_LINE_CHAR 10
 

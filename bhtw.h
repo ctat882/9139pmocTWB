@@ -4,7 +4,7 @@
 #define MAX_CHARS 256
 #define BWT_OFFSET 4
 #define INDEX_LIMIT 512
-#define MAX_STRING_LEN 100
+#define MAX_STRING_LEN 200
 
 #define RANK_INTERVAL 2048
 #define C_TABLE_OFFSET 1024
@@ -71,8 +71,10 @@ static void  get_first_and_last (char *query,table st, FILE *bwt, FILE *idx, int
 result backwards_results (int *fnl,table st, FILE *bwt, FILE *idx);
 void forward_results(int *fnl,result head,table st, FILE *bwt, FILE *idx);
 int pos_of_rank_c_in_bwt (int c,int rank,table st, FILE *bwt, FILE *idx);
-
-
+void search_for_duplicate_lines (result head);
+void sort_b_strings(result head);
+void free_results(result head);
+int count_results (result head);
 /* UNIVERSAL */
 static int get_last_occurence (unsigned int *ctable, int c);
 unsigned int occ (int c, int position,FILE *bwt, FILE *idx);
@@ -234,11 +236,38 @@ void backwards_search (char *query,table st, FILE *bwt, FILE *idx) {
       /*
          NOW RECOVER STRING
       */
-      result head = backwards_results(fnl,st,bwt,idx);
-      printf("####DEBUG Starting forward results\n");   
+      result head = backwards_results(fnl,st,bwt,idx); 
+      // delete duplicate lines     
+       
       forward_results(fnl,head,st,bwt,idx);
+      
+      search_for_duplicate_lines(head);
+
+      sort_b_strings(head);
+
+//      result r = head;
+
+//      while (r != NULL) {
+//         char sorted[r->b_length];
+//         int i;
+//         int j = 0;
+//         for (i = r->b_length - 1; i >= 0; i--) {
+//            sorted[j] = r->b_string[i];
+//            j++;
+//         }
+//         for(j = 0; j < r->b_length; j++) {
+//            printf("%c",sorted[j]);
+//         }
+//         for(j = 0; j < r->f_length; j++) {
+//            printf("%c",r->f_string[j]);
+//         }
+//         printf("\n");
+//         r = r->next;
+//         
+//      }
+      
+      
       // test:
-      printf("####DEBUG END forward results\n");
       result t = head;
       while (t != NULL) {
          int j;
@@ -251,11 +280,92 @@ void backwards_search (char *query,table st, FILE *bwt, FILE *idx) {
          }
          printf("\n");
          t = t->next;
-      }      
+      }
+
+      free_results(head);      
    }   
+   
+   
    
    return;
 }
+
+int count_results (result head) {
+   int count = 0;
+   result r = head;
+   while (r != NULL) {
+      count++;
+      r = r->next;
+   }
+   return count;
+}
+
+void free_results (result head) {
+   result cur = head;
+   while (cur != NULL) {
+      result temp = cur;
+      cur = cur->next;
+      if(temp->b_string != NULL) free(temp->b_string);
+      if(temp->f_string != NULL) free(temp->f_string);
+      if(temp != NULL) free(temp); 
+      temp = NULL;     
+      
+   }
+   
+   head = NULL;
+}
+
+void sort_b_strings(result head) {
+   result r = head;
+
+   while (r != NULL) {
+      char *sorted = malloc(sizeof(char) * r->b_length);
+      int i;
+      int j = 0;
+      for (i = r->b_length - 1; i >= 0; i--) {
+         sorted[j] = r->b_string[i];
+         j++;
+      }
+      char * temp =  r->b_string;
+      r->b_string = sorted;
+      free(temp);
+      r = r->next;
+      
+   }
+}
+
+
+void search_for_duplicate_lines (result head){
+   result cur = head;
+//         result last = head;
+   result next = NULL;
+   int id;
+   while (cur != NULL) {
+      id = cur->id;
+      next = cur->next;
+      result before = cur;
+      while(next != NULL) {
+         if (next->id == id) {
+            result temp = next;
+            next = next->next;
+            before->next = next;
+            if(temp->b_string != NULL) free(temp->b_string);
+            if(temp->f_string != NULL) free(temp->f_string);
+            if(temp != NULL) free(temp); 
+//            free(temp->b_string);
+//            free(temp->f_string);
+//            free(temp);
+         }
+         else {
+            before = next;
+            next = next->next;
+         }
+      }
+//            last = cur;
+      cur = cur->next;
+   }
+}
+
 
 void forward_results(int *fnl,result head,table st, FILE *bwt, FILE *idx) {
    result cur = head;
@@ -283,19 +393,15 @@ void forward_results(int *fnl,result head,table st, FILE *bwt, FILE *idx) {
       }
       // store c
       while ( c != last_ch && c != '\n') {
-         printf("####DEBUG FSTRING\n");
-         printf("STR_LEN = %d\n",str_len);
          cur->f_string[str_len] = c;
          str_len++;
-         printf("####DEBUG POST FSTRING\n");
+         if(str_len == (MAX_STRING_LEN -1)) printf("###########ERROR STRLEN AT MAX FORWARDS)");
          //TODO delete this output
-         printf("%c",c);      
+//         printf("%c",c);      
          // get the next position   
          f_occ = pos - st->ctable[c] + 1;
-         printf("####DEBUG starting pos_of_rank\n");
          // get the bwt position of character c with rank = f_occ 
          pos = pos_of_rank_c_in_bwt (c,f_occ,st,bwt,idx);
-         printf("####DEBUG end pos_of_rank\n");
          // get character in f at pos
          for(j = 0; j < MAX_CHARS; j++) {
             if(st->ctable[j] <= pos) {
@@ -304,10 +410,8 @@ void forward_results(int *fnl,result head,table st, FILE *bwt, FILE *idx) {
          }               
       }
       result_count++;
-      cur->f_length = str_len;
-      printf("####DEBUG NEXT RESULT\n");      
+      cur->f_length = str_len;   
       cur = cur->next;
-      printf("cur = %p\n",cur);
    }
 
 }
@@ -348,7 +452,6 @@ int pos_of_rank_c_in_bwt (int c,int rank,table st, FILE *bwt, FILE *idx) {
          int interval;  // first index interval
          int max_interval = (st->bwt_size / RANK_INTERVAL);
          int gone_past = FALSE;
-         printf("####DEBUG pos_of_rank: START INTERVAL LOOP\n");
          for (interval = 1; interval < max_interval; interval++) {
             idx_offset = (((interval * RANK_INTERVAL) - RANK_INTERVAL) / RANK_INTERVAL) * MAX_CHARS * sizeof(int);
             fseek(idx,idx_offset,SEEK_SET);
@@ -359,9 +462,7 @@ int pos_of_rank_c_in_bwt (int c,int rank,table st, FILE *bwt, FILE *idx) {
             }
             
          }
-         printf("####DEBUG pos_of_rank: END INTERVAL LOOP\n");
          if (gone_past) {
-         printf("####DEBUG pos_of_rank: START GONE PAST\n");
             interval--;
             idx_offset = (((interval * RANK_INTERVAL) - RANK_INTERVAL) / RANK_INTERVAL) * MAX_CHARS * sizeof(int);
 //            idx_offset = interval * MAX_CHARS * sizeof(int);
@@ -381,7 +482,7 @@ int pos_of_rank_c_in_bwt (int c,int rank,table st, FILE *bwt, FILE *idx) {
          // Must be inbetween the end of the last index block  
          // and the end of the BWT. - WORST CASE
          else {
-            printf("####DEBUG pos_of_rank: START LAST AREA\n");
+//            printf("####DEBUG pos_of_rank: START LAST AREA\n");
 //            idx_offset = (max_interval - 1) * MAX_CHARS * sizeof(int);
 idx_offset = ((((max_interval - 1) * RANK_INTERVAL) - RANK_INTERVAL) / RANK_INTERVAL) * MAX_CHARS * sizeof(int);
             fseek(idx,idx_offset,SEEK_SET);
@@ -448,8 +549,9 @@ result backwards_results (int *fnl,table st, FILE *bwt, FILE *idx){
       while ( c != last_ch && c != '\n') {
          r->b_string[str_len] = c;
          str_len++;
+         if(str_len == (MAX_STRING_LEN - 1)) printf("###########ERROR STRLEN AT MAX BACKWARDS)");
          //TODO delete this output
-         printf("%c",c);      
+//         printf("%c",c);      
          // get the next position      
          pos = st->ctable[c] + occ(c,pos,bwt,idx);
          fseek(bwt,pos + BWT_OFFSET,SEEK_SET);
@@ -461,9 +563,9 @@ result backwards_results (int *fnl,table st, FILE *bwt, FILE *idx){
       r->b_length = str_len;
 //         printf("%s",query);
       //TODO delete this output
-      if (c == '\n') {
-         printf("%c",c);
-      }
+//      if (c == '\n') {
+//         printf("%c",c);
+//      }
       result_count++;
       // update link
       last = r;

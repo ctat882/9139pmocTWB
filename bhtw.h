@@ -4,6 +4,7 @@
 #define MAX_CHARS 256
 #define BWT_OFFSET 4
 #define INDEX_LIMIT 512
+#define MAX_STRING_LEN 100
 
 #define RANK_INTERVAL 2048
 #define C_TABLE_OFFSET 1024
@@ -19,19 +20,39 @@
 #define SEARCH_MODE 4
 #define NEW_LINE_CHAR 10
 
+#define FIRST 0
+#define LAST 1
+
 /*********************************
  **        TYPE DEFINES         **
  *********************************/
 
-typedef struct _symbol_table *table;
+/*
+   Result object used in search and string reconstruction
+*/ 
+typedef struct _result_object *result;
+struct _result_object {
+   unsigned int id;        //identify the line (use the last char or '\n')
+   char *b_string;  //backwards search results string
+   char *f_string;   //forwards search string
+   short int b_length;     //length of backwards result string
+   short int f_length;  //length of forward result string
+   result next;            //the next result;  
+   
+} result_object;
 
+/*
+   Symbol table used to hold C array and other statitistics
+*/
+typedef struct _symbol_table *table;
 struct _symbol_table {
 
    unsigned int *ctable;         // The C[] table
    unsigned int num_lines;       // The number of lines in the table
-   unsigned int bwt_file_size;       // The number of bytes in the file (- 1st four bytes)
-   unsigned int last;   // Position of the last character in bwt
-   unsigned int idx_file_size;
+   unsigned int bwt_size;        // # bytes in the file (- 1st four bytes)
+   unsigned int last;            // Position of the last character in bwt
+   unsigned int idx_size;        // # bytes in index
+   
    
 } symbol_table;
 
@@ -40,25 +61,34 @@ struct _symbol_table {
  **      FUNCTION PROTOTYPES    **
  *********************************/
  
-static unsigned int * create_c_table (unsigned int *freq);
-//static void init_symbol_table (table st, unsigned int *c, unsigned int lines, unsigned int fSize, unsigned int last);
+/* STRUCTS */
 static table new_symbol_table ();
+result new_result ();
+
+/* SEARCH RELATED FUNCTIONS */
 static void backwards_search (char *query,table st, FILE *bwt, FILE *idx);
+static void  get_first_and_last (char *query,table st, FILE *bwt, FILE *idx, int *fnl);
+result backwards_results (int *fnl,table st, FILE *bwt, FILE *idx);
+void forward_results(int *fnl,result head,table st, FILE *bwt, FILE *idx);
+int pos_of_rank_c_in_bwt (int c,int rank,table st, FILE *bwt, FILE *idx);
+
+
+/* UNIVERSAL */
 static int get_last_occurence (unsigned int *ctable, int c);
 unsigned int occ (int c, int position,FILE *bwt, FILE *idx);
 int occ_func(int character,int limit,FILE *bwt);
-int occ_func_pos(int character,int position,FILE *bwt,int from);
-//static void unbwt(table st);
-//static int get_num_lines (table st);
 static unsigned int get_last_char_pos (FILE *bwt);
 static unsigned int get_bwt_size (FILE *bwt);
 static unsigned int get_idx_size (FILE *idx);
+int get_last_char (FILE *bwt,int position);
 static void c_table_from_idx (table st, FILE *idx);
 
-
+/* INDEX CREATION FUNCTIONS */
 static void create_idx (char *idx_file_loc, FILE *bwt);
+static unsigned int * create_c_table (unsigned int *freq);
 
-int get_last_char (FILE *bwt,int position);
+
+
 /*********************************
  **        DEBUG PROTOTYPES     **
  *********************************/
@@ -68,6 +98,20 @@ void print_stats (table st);
  /**********************************
  **      FUNCTION DEFINITIONS     **
  **********************************/
+
+
+result new_result () {
+   result r = malloc(sizeof(result_object));   
+   r->id = 0;
+   r->b_string = malloc(sizeof(char) * MAX_STRING_LEN);   
+   memset(r->b_string,0,sizeof(char) * MAX_STRING_LEN);     // set everything to 0
+   r->f_string = malloc(sizeof(char) * MAX_STRING_LEN);  
+   memset(r->f_string,0,sizeof(char) * MAX_STRING_LEN);     // set everything to 0
+   r->b_length = 0;
+   r->f_length = 0;
+   r->next = NULL;
+   return r;
+}
 
 
 static void create_idx (char *idx_file_loc, FILE *bwt) {
@@ -100,8 +144,8 @@ static void create_idx (char *idx_file_loc, FILE *bwt) {
    // Create C[] table and store at end of index file
    unsigned int *ctable = create_c_table(count);
    fwrite (ctable,sizeof(int),MAX_CHARS,idx);
-   printf("C_TABLE:\n");
-   print_c_table(ctable);
+//   printf("C_TABLE:\n");
+//   print_c_table(ctable);
    
    free (ctable);
 
@@ -166,30 +210,277 @@ static unsigned int * create_c_table (unsigned int *freq) {
    return c;
 }
 
-//static void init_symbol_table (table st, unsigned int *c, unsigned int lines, unsigned int fSize, unsigned int last ) {
-//   st->ctable = c;
-//   st->num_lines = lines;
-//   st->bwt_file_size = fSize;
-//   st->last = last;
-//}
 
 static table new_symbol_table() {
    table newTable = malloc(sizeof(symbol_table));
    newTable->ctable = NULL;
    newTable->num_lines = 0;
-   newTable->bwt_file_size = 0;
+   newTable->bwt_size = 0;
    return newTable;
 }
 
-static void backwards_search (char *query,table st, FILE *bwt, FILE *idx) {
+void backwards_search (char *query,table st, FILE *bwt, FILE *idx) {
+   int fnl[2]; // First and Last values
+   get_first_and_last (query,st,bwt,idx,fnl);
+   // determine results
+   if ( fnl[LAST] < fnl[FIRST]) {
+      //TODO delete this output
+      printf("No matches found\n");
+   }
+   else {      
+      //TODO delete output
+      int matches = fnl[LAST] - fnl[FIRST] + 1;
+      printf("Number of matches = %d\n",matches);
+      /*
+         NOW RECOVER STRING
+      */
+      result head = backwards_results(fnl,st,bwt,idx);
+      printf("####DEBUG Starting forward results\n");   
+      forward_results(fnl,head,st,bwt,idx);
+      // test:
+      printf("####DEBUG END forward results\n");
+      result t = head;
+      while (t != NULL) {
+         int j;
+         for(j = 0; j < t->b_length; j++) {
+            printf("%c",t->b_string[j]);
+         }
+//         printf(" %s",query);
+         for(j = 0; j < t->f_length; j++) {
+            printf("%c",t->f_string[j]);
+         }
+         printf("\n");
+         t = t->next;
+      }      
+   }   
+   
+   return;
+}
+
+void forward_results(int *fnl,result head,table st, FILE *bwt, FILE *idx) {
+   result cur = head;
+   int i;
+   int c = 0;
+   fseek(bwt,st->last + BWT_OFFSET,SEEK_SET);
+   int last_ch = getc(bwt);
+//   rewind(bwt);
+   int result_count = 0;
+
+   
+   // Iterate through the results
+   // MUST KEEP first - 1
+   for (i = fnl[FIRST] - 1; i < fnl[LAST]; i++) {
+      // create result, update links
+      int str_len = 0;
+      int pos = i;
+      int j;
+      int f_occ;
+      // get the character in F at pos
+      for(j = 0; j < MAX_CHARS; j++) {
+         if(st->ctable[j] <= pos) {
+            c = j;
+         }
+      }
+      // store c
+      while ( c != last_ch && c != '\n') {
+         printf("####DEBUG FSTRING\n");
+         printf("STR_LEN = %d\n",str_len);
+         cur->f_string[str_len] = c;
+         str_len++;
+         printf("####DEBUG POST FSTRING\n");
+         //TODO delete this output
+         printf("%c",c);      
+         // get the next position   
+         f_occ = pos - st->ctable[c] + 1;
+         printf("####DEBUG starting pos_of_rank\n");
+         // get the bwt position of character c with rank = f_occ 
+         pos = pos_of_rank_c_in_bwt (c,f_occ,st,bwt,idx);
+         printf("####DEBUG end pos_of_rank\n");
+         // get character in f at pos
+         for(j = 0; j < MAX_CHARS; j++) {
+            if(st->ctable[j] <= pos) {
+               c = j;
+            }
+         }               
+      }
+      result_count++;
+      cur->f_length = str_len;
+      printf("####DEBUG NEXT RESULT\n");      
+      cur = cur->next;
+      printf("cur = %p\n",cur);
+   }
+
+}
+// TODO IMPLEMENT BINARY SEARCH HERE
+int pos_of_rank_c_in_bwt (int c,int rank,table st, FILE *bwt, FILE *idx) {
+   // keep track of position in bwt
+   int pos = -1;  // initialise at -1 because of 0 base
+   int ch;
+   int idx_offset = 0;
+   int count = 0;
+   // Determine if the index file is needed
+   if (st->bwt_size < RANK_INTERVAL) {
+      // Go to the beginning of BWT file
+      fseek(bwt,BWT_OFFSET,SEEK_SET);
+      while (count != rank) {
+         pos++;
+         ch = getc(bwt);
+         if (ch == c) count++;
+      }
+   }
+   // Otherwise use index file
+   else {
+      int *index = (int*) malloc (sizeof(int) * MAX_CHARS);
+      rewind(idx);
+      fread(index,sizeof(int),MAX_CHARS,idx);
+      
+      if (index[c] >= rank) {
+         // Have to count from beginning of BWT file
+         fseek(bwt,BWT_OFFSET,SEEK_SET);
+         while (count != rank) {
+            pos++;
+            ch = getc(bwt);
+            if (ch == c) count++;
+         }
+      }
+      // not in the first interval
+      else {
+         int interval;  // first index interval
+         int max_interval = (st->bwt_size / RANK_INTERVAL);
+         int gone_past = FALSE;
+         printf("####DEBUG pos_of_rank: START INTERVAL LOOP\n");
+         for (interval = 1; interval < max_interval; interval++) {
+            idx_offset = (((interval * RANK_INTERVAL) - RANK_INTERVAL) / RANK_INTERVAL) * MAX_CHARS * sizeof(int);
+            fseek(idx,idx_offset,SEEK_SET);
+            fread(index,sizeof(int),MAX_CHARS,idx);
+            if (index[c] >= rank) {
+               gone_past = TRUE;
+               break;
+            }
+            
+         }
+         printf("####DEBUG pos_of_rank: END INTERVAL LOOP\n");
+         if (gone_past) {
+         printf("####DEBUG pos_of_rank: START GONE PAST\n");
+            interval--;
+            idx_offset = (((interval * RANK_INTERVAL) - RANK_INTERVAL) / RANK_INTERVAL) * MAX_CHARS * sizeof(int);
+//            idx_offset = interval * MAX_CHARS * sizeof(int);
+            fseek(idx,idx_offset,SEEK_SET);
+            fread(index,sizeof(int),MAX_CHARS,idx);
+            
+            pos = interval * RANK_INTERVAL;
+            fseek(bwt,BWT_OFFSET + pos,SEEK_SET);
+            count = index[c];
+            while (count != rank) {
+               pos++;
+               ch = getc(bwt);
+               if (ch == c) count++;
+            }
+            
+         }
+         // Must be inbetween the end of the last index block  
+         // and the end of the BWT. - WORST CASE
+         else {
+            printf("####DEBUG pos_of_rank: START LAST AREA\n");
+//            idx_offset = (max_interval - 1) * MAX_CHARS * sizeof(int);
+idx_offset = ((((max_interval - 1) * RANK_INTERVAL) - RANK_INTERVAL) / RANK_INTERVAL) * MAX_CHARS * sizeof(int);
+            fseek(idx,idx_offset,SEEK_SET);
+            fread(index,sizeof(int),MAX_CHARS,idx);
+            pos = (max_interval - 1) * RANK_INTERVAL;
+            fseek(bwt,BWT_OFFSET + pos,SEEK_SET);
+            count = index[c];
+            while (count != rank) {
+               pos++;
+               ch = getc(bwt);
+               if (ch == c) count++;
+            }
+         }
+
+      }
+
+      free(index);
+//      fseek(bwt,BWT_OFFSET,SEEK_SET);
+//      int debugcount = 0;
+//      int debugpos = -1;
+//      while (debugcount != rank) {
+//         debugpos++;
+//         ch = getc(bwt);
+//         if (ch == c) debugcount++;
+//      }
+//      printf("DEBUGPOS = %d, POS = %d\n",debugpos,pos);
+      pos--;
+   }
+
+   return pos;
+}
+
+
+result backwards_results (int *fnl,table st, FILE *bwt, FILE *idx){
+   result head = NULL;
+   result last = NULL;
+   int i;
+   int c = 0;
+   fseek(bwt,st->last + BWT_OFFSET,SEEK_SET);
+   int last_ch = getc(bwt);
+   rewind(bwt);
+   int result_count = 0;
+
+   /*
+      BACKWARDS
+   */
+   
+   // Iterate through the results
+   // MUST KEEP first - 1
+   for (i = fnl[FIRST] - 1; i < fnl[LAST]; i++) {
+      // create result, update links
+      result r = new_result();
+      if(result_count == 0 ) {
+         head = r;         
+      }
+      else {
+         last->next = r;
+      }
+      int str_len = 0;
+      int pos = i;
+      fseek(bwt,pos + BWT_OFFSET,SEEK_SET);
+      c = getc(bwt);
+      // Get the string
+      while ( c != last_ch && c != '\n') {
+         r->b_string[str_len] = c;
+         str_len++;
+         //TODO delete this output
+         printf("%c",c);      
+         // get the next position      
+         pos = st->ctable[c] + occ(c,pos,bwt,idx);
+         fseek(bwt,pos + BWT_OFFSET,SEEK_SET);
+         // get character
+         c = getc(bwt);               
+      }
+      // set r->id to '\n' position in bwt
+      r->id = ftell(bwt) - 1;
+      r->b_length = str_len;
+//         printf("%s",query);
+      //TODO delete this output
+      if (c == '\n') {
+         printf("%c",c);
+      }
+      result_count++;
+      // update link
+      last = r;
+   }
+   return head;
+}
+
+
+static void  get_first_and_last (char *query,table st, FILE *bwt, FILE *idx, int *fnl) {
    // Get First and Last
-   short int found_match;
+//   short int found_match;
    //initialise variables
    int i = strlen(query) - 1;          // i = |P|
    int c = query[i];                   // 'c' = last character in P
    int first = st->ctable[c] + 1;
    int last = get_last_occurence (st->ctable,c);
-   printf("i = %d, c = %c, First = %d, Last = %d\n",i,c,first,last);
+//   printf("i = %d, c = %c, First = %d, Last = %d\n",i,c,first,last);
    
    // Run the backwards search algorithm
    /*
@@ -202,7 +493,7 @@ static void backwards_search (char *query,table st, FILE *bwt, FILE *idx) {
    */
    while ((first <= last) && i >= 1) {
       c = query[i - 1];
-      if (st->idx_file_size < RANK_INTERVAL) {
+      if (st->idx_size < RANK_INTERVAL) {
          first = st->ctable[c] + occ_func(c,first - 1,bwt) + 1;
          last = st->ctable[c] + occ_func(c,last,bwt);
       }
@@ -211,50 +502,13 @@ static void backwards_search (char *query,table st, FILE *bwt, FILE *idx) {
          last = st->ctable[c] + occ(c,last,bwt,idx);
       }
       i--;
-      printf("i = %d, c = %c, First = %d, Last = %d\n",i,c,first,last);
+//      printf("i = %d, c = %c, First = %d, Last = %d\n",i,c,first,last);
    }
-   if ( last < first) { 
-      found_match = FALSE;
-      //TODO delete this output
-      printf("No matches found\n");
-   }
-   else {
-      found_match = TRUE;      
-   }
-   if(found_match) {
-      //TODO delete output
-      int matches = last - first + 1;
-      printf("Number of matches = %d\n",matches);
+   fnl[FIRST] = first;
+   fnl[LAST] = last;
 
-/*
-   NOW TRY AND RECOVER STRING
-*/
-      printf("Position of last char in bwt = %d\n",st->last);
-//      fseek(bwt,st->last,SEEK_SET);
-//      int last_ch = getc(bwt);
-//      rewind(bwt);
-//      c = 0;
-//      int occurL;
-//      
-//      for (i = first; i <= last; i++) {
-//         int temp = i - 1;
-//         while ( c != last_ch) {
-//            fseek(bwt,temp,SEEK_SET);
-//            occurL = ftell(bwt);
-//            c = getc(bwt);
-//            if(c != '\n') {
-//               printf("%c",c);
-//            }
-//            temp = st->ctable[c] + occ(c,occurL,bwt,idx);
-//         }
-//      }
-
-      
-   }
-
-   
-   return;
 }
+   
 
 unsigned int occ (int c, int position,FILE *bwt,FILE *idx) {
    //TODO check if needed:
@@ -354,10 +608,10 @@ void print_c_table (unsigned int *ctable) {
 
 void print_stats (table st) {
 //   printf("NUM LINES = %d\n",st->num_lines);
-//   printf("FILE SIZE = %d BYTES\n",st->bwt_file_size);
+//   printf("FILE SIZE = %d BYTES\n",st->bwt_size);
 
-   printf("SIZE of BWT file is %d\n",st->bwt_file_size);
-   printf("SIZE of index file is %d\n",st->idx_file_size);
+   printf("SIZE of BWT file is %d\n",st->bwt_size);
+   printf("SIZE of index file is %d\n",st->idx_size);
 
 }
 

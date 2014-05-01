@@ -61,7 +61,7 @@ FILE *bwt;
 FILE *idx;
 int has_index;
 int search_mode;
-int idx_file_size;
+int idx_size;
 
 
 
@@ -86,11 +86,11 @@ int main (int argc, char *argv[])
    idx = fopen(argv[INDEX_ARG],"r");
    
 /*   fseek(idx,0,SEEK_END); // get length of index file*/
-/*   idx_file_size = ftell(idx);*/
+/*   idx_size = ftell(idx);*/
 /*   rewind(idx);*/
    
-   st->bwt_file_size = get_bwt_size(bwt);
-   st->idx_file_size = get_idx_size(idx);
+   st->bwt_size = get_bwt_size(bwt);
+   st->idx_size = get_idx_size(idx);
 
    c_table_from_idx(st,idx);
    st->last = get_last_char_pos (bwt);
@@ -134,9 +134,9 @@ void unbwt(table st, FILE *bwt, FILE *idx, char *output) {
    int c;
    
    FILE *unb = fopen(output,"w+");
-   write_unbwt(st->bwt_file_size,unb);  //TODO check if I can do this.
+   write_unbwt(st->bwt_size,unb);  //TODO check if I can don't have to do this.
 /*   int pointer;*/
-   for (i = st->bwt_file_size - 1; i >= 0; i--) {
+   for (i = st->bwt_size - 1; i >= 0; i--) {
      fseek(bwt,BWT_OFFSET + j,SEEK_SET);
      fseek(unb,i,SEEK_SET);
      c = getc(bwt);
